@@ -1,0 +1,80 @@
+library ieee;
+use ieee.std_logic_1164.all;
+
+entity test is
+
+	generic(G_N: integer := 32);
+	port (i_clk: in std_logic;
+			i_rst: in std_logic;
+			--i_data_enable: in std_logic;
+			i_data: in  std_logic_vector(G_N - 1 downto 0);
+			o_data_valid: out std_logic;
+			o_data: out std_logic_vector(G_N - 1 downto 0);
+			o_error_serialize_pulse: out std_logic);
+	end test;
+	
+	
+architecture rtl of test is
+	
+	signal r_data_enable : std_logic;
+	signal r_data : std_logic_vector(G_N-1 downto 0);
+	signal r_count : integer range 0 to G_N -1;
+	signal r_converted_data : std_logic;
+	signal r_data_valid : std_logic;
+	
+	begin
+	
+	component parallel2serial is
+
+	generic(G_N: integer := 32);
+	port (i_clk: in std_logic;
+			i_rst: in std_logic;
+			--i_data_enable: in std_logic;
+			i_data: in  std_logic_vector(G_N - 1 downto 0);
+			o_data_valid: out std_logic;
+			o_data: out std_logic;
+			o_error_serialize_pulse: out std_logic);
+	end component;
+	
+	component Serial2parallel is
+	generic( G_N : integer:=32); --generalized to be used for 32 bit floating points
+	port(
+		i_clk : in std_logic;
+		i_reset : in std_logic;
+		i_data_enable : in std_logic;
+		i_data : in std_logic;
+		o_data_valid : out std_logic;
+		o_data : out std_logic_vector(G_N - 1 downto 0));
+	end component;
+	
+	
+	begin
+	
+	SP0: parallel2serial
+	generic map(G_N: integer => 32)
+	port (i_clk <= i_clk,
+			i_rst <= i_rst,
+			--i_data_enable: in std_logic;
+			i_data <= i_data,
+			o_data_valid <= r_data_valid,
+			o_data <= r_converted_data,
+			o_error_serialize_pulse <= o_error_serialize_pulse);
+
+	
+	SP1: Serial2parallel 
+	generic map( G_N : integer => 32) --generalized to be used for 32 bit floating points
+	port(
+		i_clk <= i_clk,
+		i_reset <= i_reset,
+		i_data_enable <= i_data_enable,
+		i_data <= i_data,
+		o_data_valid <= o_data_valid,
+		o_data <= o_data);
+
+	
+	
+
+	
+end rtl;
+--___________________
+

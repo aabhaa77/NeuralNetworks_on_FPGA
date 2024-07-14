@@ -1,0 +1,114 @@
+library IEEE;
+use IEEE.std_logic_1164.all;
+use IEEE.numeric_std.ALL;
+use work.NNProject.all;
+
+entity fp_addition is
+	port( i_clk : in std_logic;
+			i_reset : in std_logic;
+			i_data_enable : in std_logic;
+			i_A_data, i_B_data : in std_logic; --32 bit input floating point
+			o_sum : OUT std_logic_vector(31 downto 0)); --32 bit output floating point
+end fp_addition;
+
+architecture behavioral of fp_addition is
+
+	--intermediate signal for A & B & ouput_sum
+	signal r_A, r_B : std_logic_vector(31 downto 0);
+	signal A_mantissa, B_mantissa, sum_mantissa : std_logic_vector(23 downto 0); 
+	signal A_exp, B_exp, sum_exp : std_logic_vector(8 downto 0); --factoring in carry over during addition
+	signal A_sign, B_sign, sum_sign : std_logic;
+	
+	signal w_addition : std_logic; --high means then addition has taken place
+	
+	signal r_A_data_valid : std_logic; --using same output valid variable beacause they are synchrnous and work parallel
+	signal r_B_data_valid : std_logic; --using same output valid variable beacause they are synchrnous and work parallel
+		
+	begin
+	
+	SP0 : serial2parallel port map(i_clk, i_reset, i_data_enable, i_A_data, r_A_data_valid, r_A);
+	SP1 : serial2parallel port map(i_clk, i_reset, i_data_enable, i_B_data, r_B_data_valid, r_B);
+	
+	process(i_clk, r_A_data_valid, r_B_data_valid) is-- i think the clk should not be there because fp_add is when the number is changed and that happend when the r_data_valid changes?
+	
+	variable diff : signed(8 downto 0);
+	
+	begin
+		w_addition <= '0';
+
+		if (r_A_data_valid = '1' and r_B_data_valid = '1') then
+		
+			A_sign <= r_A(31);
+			A_exp <= '0' &  r_A(30 downto 23);
+			A_mantissa <= "0" &  r_A(22 downto 0);
+					
+			B_sign <= r_B(31);
+			B_exp <= '0' & r_B(30 downto 23);
+			B_mantissa <= "0" & r_B(22 downto 0);
+					
+			--alignment of the numbers
+			if unsigned(A_exp) > unsigned(B_exp) then
+				diff := signed(A_exp) - signed(B_exp);
+				if diff > 23 then
+				--in case the diff is greater then during alignment the smaller number can be neglected
+					sum_mantissa <= A_mantissa;
+					sum_exp <= A_exp;
+					sum_sign <= A_sign;
+					w_addition <= '1';
+				else
+				--downshift of B
+					sum_exp <= A_exp;
+					B_mantissa(23 downto (24 - to_integer(diff))) <= (others => '0');
+					B_mantissa((23 - to_integer(diff)) downto 0) <= B_mantissa(23 downto to_integer(diff));
+		
+				end if;
+			elsif unsigned(A_exp) < unsigned(B_exp) then
+				diff := signed(B_exp) - signed(A_exp);
+				if diff > 23 then
+					sum_mantissa <= B_mantissa;
+					sum_exp <= B_exp;
+					sum_sign <= B_sign;
+					w_addition <= '1';
+				else
+				--downshift of A
+					sum_exp <= B_exp;
+					A_mantissa(23 downto (24 - to_integer(diff))) <= (others => '0');
+					A_mantissa((23 - to_integer(diff)) downto 0) <= A_mantissa(23 downto to_integer(diff));
+			
+				end if;
+			else
+				sum_exp <= A_exp;
+	
+			end if;
+			
+			--summation of the two numbers
+			if w_addition = '0' then
+				if(A_sign xor B_sign) = '0' then --both are of same sign
+					sum_mantissa <= std_logic_vector(unsigned(A_mantissa) + unsigned(B_mantissa));
+					sum_sign <= A_sign;
+				elsif unsigned(A_mantissa) >= unsigned(B_mantissa) then
+					sum_mantissa <= std_logic_vector(unsigned(A_mantissa) - unsigned(B_mantissa));
+					sum_sign <= A_sign;
+				else
+					sum_mantissa <= std_logic_vector(unsigned(B_mantissa) - unsigned(A_mantissa));
+					sum_sign <= B_sign;
+				end if;
+			
+				--normalization of the summation, in order to check for overflow that happend after addition(hence is within the if statment)
+				if sum_mantissa(23) = '1' then --presence of acrry over, hence downshift
+					sum_mantissa <= '0' & sum_mantissa(23 downto 1);
+					sum_exp <= std_logic_vector(unsigned(sum_exp) + 1);
+				end if;
+			end if;
+			
+			--output formatting
+			o_sum(22 downto 0) <= sum_mantissa(22 downto 0);
+			o_sum(30 downto 23) <= sum_exp(7 downto 0);
+			o_sum(31) <= sum_sign;
+		end if;
+		
+	end process;			
+	
+end architecture;
+
+

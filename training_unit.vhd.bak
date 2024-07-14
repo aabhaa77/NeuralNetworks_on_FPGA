@@ -1,0 +1,178 @@
+library ieee;
+use ieee.std_logic_1164.all;
+use ieee.numeric_std.ALL;
+use work.NNProject.all;
+
+--training for the last layer
+entity training_unit is
+	generic(
+		i_N : integer := 4;
+		i_weights_column1 : integer := 2;
+		i_weights_column2 : integer := 2;
+		i_weights_column3 : integer := 1);
+	port( i_clk : in std_logic;
+			i_reset : in std_logic;
+			i_data_enable : in std_logic;
+			i_data, i_weights1, i_weights2, i_weights3: in std_logic;
+			i_bias1, i_bias2, i_bias3 : in std_logic;
+			i_expected_output : std_logic_vector(i_weights_column3 -1 downto 0);
+			o_weight : out std_logic_vector( (32*(i_weights_column2 * i_weights_column3)) -1 downto 0)); --no.of element in weight matrix * 32bits
+end training_unit;
+
+architecture rtl of training_unit is
+
+	signal r_output_valid1 : std_logic;
+	signal r_output_valid2 : std_logic;
+	signal r_updating_weights : std_logic_vector((32* i_weights_column2 * i_weights_column3) -1 downto 0);
+	signal threshold : std_logic_vector; --LOOK INTO THIS
+	signal Prev_loss : std_logic;--LOOK INTO THIS
+	signal Curr_loss : std_logic;--LOOK INTO THIS
+	signal loss : std_logic_vector(31 downto 0);
+	signal slope : std_logic_vector(31 downto 0);--LOOK INTO THIS
+	signal new_weights3 : std_logic;
+	signal r_error_serialize_pulse : std_logic;
+	signal learning_rate : std_ogic_vector(32 downto 0);--LOOK INTO THIS
+	signal obtained_output_initial : std_logic_vector(i_weights_column3 -1 downto 0);
+	signal obtained_output : std_logic_vector(i_weights_column3 -1 downto 0);
+	
+	
+	component Serial2parallel is
+	generic( G_N : integer:=32); 
+	port(
+		i_clk : in std_logic;
+		i_reset : in std_logic;
+		i_data_enable : in std_logic;
+		i_data : in std_logic;
+		o_data_valid : out std_logic;
+		o_data : out std_logic_vector(G_N - 1 downto 0));
+	end component;
+	
+	component parallel2serial is
+	generic(G_N: integer := 32);
+	port (i_clk: in std_logic;
+			i_rst: in std_logic;
+			--i_data_enable: inout std_logic;
+			i_data: in  std_logic_vector(G_N - 1 downto 0);
+			o_data_valid: out std_logic;
+			o_data: out std_logic;
+			o_error_serialize_pulse: out std_logic);
+	end component;
+
+	component fp_addition is
+	port( i_clk : in std_logic;
+			i_reset : in std_logic;
+			i_data_enable : in std_logic;
+			i_A_data, i_B_data : in std_logic; 
+			o_sum : OUT std_logic_vector(31 downto 0));
+	end component;
+
+	component fp_multiplication is
+		port( i_clk : in std_logic;
+				i_reset : in std_logic;
+				i_data_enable : in std_logic;
+				i_A_data, i_B_data : in std_logic;  
+				o_product : out std_logic_vector(31 downto 0));
+	end component;
+	
+	component perceptron is
+	generic(
+		i_N : integer := 4;
+		i_weights_column1 : integer := 2;
+		i_weights_column2 : integer := 2;
+		i_weights_column3 : integer := 1);
+	port( i_clk : in std_logic;
+			i_reset : in std_logic;
+			i_data_enable : in std_logic;
+			i_data, i_weights1, i_weights2, i_weights3: in std_logic;  
+			i_bias1, i_bias2, i_bias3 : in std_logic;
+			o_perceptron : out std_logic_vector(i_weights_column3 -1 downto 0)); 
+	end component;
+	
+	begin
+	
+	learning_rate<= "00000000000000000000001111101000";
+	slope<= "00000000000000000000000000000001";
+	threshold <= "00111010100000000000000000000001";
+	
+	--to be trained weight being converted into parallel.
+	SP0 : serial2parallel
+	generic map(G_N => (i_weights_column2 * i_weights_column3 * 32))
+	port map(i_clk => i_clk,
+				i_reset => i_reset,
+				i_data_enable => i_data_enable,
+				i_data => i_weights3,
+				o_data_valid => r_output_valid1,
+				o_data => r_updating_weights);
+	
+	--calculating the inital loss function
+	P0: perceptron
+		generic map(
+			i_N  => 4,
+			i_weights_column1 => 2,
+			i_weights_column2 => 2,
+			i_weights_column3 => 1)
+		port map( i_clk => i_clk,
+			i_reset => i_reset,
+			i_data_enable => i_data_enable,
+			i_data, i_weights1, i_weights2, i_weights3 => i_data, i_weights1, i_weights2, new_weights3,
+			i_bias1, i_bias2, i_bias3 => i_bias1, i_bias2, i_bias3,
+			o_perceptron => obtained_output_initial);
+  
+	L0: for i in 0 to i_weights_column3 generate
+		prev_loss[i] <= (i_expected_output[i] - obtained_output_initial[i]) * (i_expected_output[i] - obtained_output_initial[i]);
+	end generate L0;
+		
+	for i in 0 to i_weights_column3 loop
+			
+			
+	while slope > threshold loop	--does it compared by itself?
+		
+		--updating of the weights
+		for j in 0 to i_weights_column2 loop --CHECK IF THIS IS FEASIBLE
+			r_updating_weights = fp_addition_parallel(r_updating_weights((j+1)*32 -1 downto j*32) , learning_rate); --make fp_addn_parallel
+      end loop;   
+		
+		--conversion of weights into series
+		PS0 : Parallel2Series
+		generic map(G_N => i_weights_column2 * i_weights_column3 * 32);
+		port map(i_clk=> i_clk;
+			i_rst => i_reset;
+			--i_data_enable: inout std_logic;
+			i_data => r_updating_weights;
+			o_data_valid => r_output_valid2 ;
+			o_data => new_weights3;
+			o_error_serialize_pulse=>r_error_serialize_pulse);--FIND WHAT TO DO
+	   
+		--passing it through the perceptron
+		if(r_output_valid2 = 1) then
+			P1: perceptron
+			generic map(
+				i_N  => 4;
+				i_weights_column1 => 2;
+				i_weights_column2 => 2;
+				i_weights_column3 => 1);
+			port map( i_clk => i_clk;
+				i_reset => i_reset;
+				i_data_enable =>i_data_enable;
+				i_data, i_weights1, i_weights2, i_weights3 => i_data, i_weights1, i_weights2, new_weights3;
+				i_bias1, i_bias2, i_bias3 => i_bias1, i_bias2, i_bias3;
+				o_perceptron => obtained_output); 
+				
+			--calculating the loss function
+			Curr_loss <= (i_expected_output[i] - obtained_output[i]) * (i_expected_output[i] - obtained_output[i]);
+			
+			--calculating slope of loss function
+			loss<= "0000000000000000000000000000000" + (curr_loss - prev_loss);
+			fp_multiplication(i_clk, i_reset, i_data_enable, loss ,learning_rate, slope);
+			 
+			--Assign prev and curr losses
+			Prev_loss <= Curr_loss;
+				
+		end if;
+		
+	
+   end loop;
+
+end loop;
+
+end rtl;

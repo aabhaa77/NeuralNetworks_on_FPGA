@@ -1,0 +1,35 @@
+library ieee;
+use ieee.std_logic_1164.all;
+use IEEE. numeric_std.all;
+
+package  NNProject is
+
+component DFFON is
+	port( D : in std_logic;
+			CLK : in std_logic;
+			CLRN : in std_logic;
+			PREN : in std_logic;
+			Q : buffer std_logic;
+			QN : buffer std_logic);	
+end component;
+
+component Serial2parallel is
+	generic( G_N : integer:=32); 
+	port(
+		i_clk : in std_logic;
+		i_reset : in std_logic;
+		i_data_enable : in std_logic;
+		i_data : in std_logic;
+		o_data_valid : out std_logic;
+		o_data : out std_logic_vector(G_N - 1 downto 0));
+end component;
+
+component fp_addition is
+	port( i_clk : in std_logic;
+			i_reset : in std_logic;
+			i_data_enable : in std_logic;
+			i_A_data, i_B_data : in std_logic; 
+			o_sum : OUT std_logic_vector(31 downto 0));
+end component;
+
+end package;
